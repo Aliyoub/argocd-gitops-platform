@@ -1,0 +1,20 @@
+# Secrets et identifiants (défense en profondeur : aucun secret ne doit être commité)
+.env
+.env.*
+*.pem
+*.key
+*.crt
+kubeconfig
+*.kubeconfig
+*-secret.yaml
+*.secret.yaml
+
+# Rendus locaux de Kustomize / Helm
+rendered/
+charts/*.tgz
+
+# Système et éditeurs
+.DS_Store
+.idea/
+.vscode/
+*.swp
