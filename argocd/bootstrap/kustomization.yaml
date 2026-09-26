@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Le manifeste officiel ne fixe pas le namespace de la plupart de ses objets :
+# sans cette ligne, ils seraient créés dans le namespace courant du contexte.
+namespace: argocd
+
+resources:
+  - namespace.yaml
+  # Manifeste officiel d'Argo CD v3.4.9, non modifié (installation non-HA).
+  # Épinglé par le SHA du commit du tag v3.4.9, et non par le tag : un tag Git
+  # peut être déplacé, un commit ne le peut pas.
+  # SHA-256 du fichier : e07988f5fdede685bbad71703bdab724ba4baf9d49bb640925fc9898ba2ad750
+  - https://raw.githubusercontent.com/argoproj/argo-cd/f4554f40bc545e1d633151cd43cf3784c4e35de3/manifests/install.yaml

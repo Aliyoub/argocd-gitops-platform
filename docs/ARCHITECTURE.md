@@ -100,7 +100,7 @@ Hors périmètre, jamais modifiés : `kube-system`, `kube-public`, `kube-node-le
 
 **Polling Git plutôt que webhook.** Le cluster n'est pas joignable depuis Internet : un webhook GitHub ne peut pas atteindre Argo CD sans exposition. Argo CD interroge donc le dépôt périodiquement : en v3.4.9, toutes les 120 secondes, plus un décalage aléatoire (jitter) de 0 à 60 secondes qui étale la charge sur le repo-server (`timeout.reconciliation` et `timeout.reconciliation.jitter` dans `argocd-cm`). Le délai entre un commit et la synchronisation est un compromis assumé.
 
-**Placement sur les workers.** Le taint `NoSchedule` du control-plane repousse Argo CD et `podinfo` sur les deux workers : 1 vCPU et 2 Gio chacun, dont 64 à 65 % de mémoire déjà utilisée au repos (`kubectl top nodes`, relevés du 2026-09-26). La consommation d'Argo CD sera mesurée après installation (Phase 4) ; c'est pour cette raison que le mode non-HA est retenu et que les ressources de `podinfo` sont bornées.
+**Placement sur les workers.** Le taint `NoSchedule` du control-plane repousse Argo CD et `podinfo` sur les deux workers : 1 vCPU et 2 Gio chacun, dont 64 à 65 % de mémoire déjà utilisée au repos (`kubectl top nodes`, relevés du 2026-09-26). Mesurée après installation, la consommation d'Argo CD au repos est d'environ 150 Mio pour sept pods (`kubectl top pods`, sans aucune Application), dont environ 45 Mio pour Dex, inutile sans SSO. Elle augmentera avec le nombre d'Applications et de ressources suivies. Le mode non-HA est retenu et les ressources de `podinfo` sont bornées pour préserver cette marge.
 
 ## Contraintes connues
 

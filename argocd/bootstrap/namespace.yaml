@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    # Tous les conteneurs du manifeste officiel v3.4.9 respectent le profil
+    # « restricted » (non-root, capabilities supprimées, seccomp, pas
+    # d'escalade) : il est imposé plutôt que seulement audité.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.32
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: v1.32
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: v1.32

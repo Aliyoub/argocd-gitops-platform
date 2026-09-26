@@ -2,7 +2,7 @@
 
 Déploiement continu GitOps sur un cluster Kubernetes kubeadm avec Argo CD : le dépôt Git est l'unique source de vérité, et Argo CD aligne en continu le cluster sur son contenu (synchronisation automatique, self-heal, prune, rollback par `git revert`).
 
-> **Statut :** projet en cours de construction (Phase 3 terminée — manifestes de podinfo validés, pas encore déployés).
+> **Statut :** projet en cours de construction (Phase 4 terminée — Argo CD v3.4.9 installé ; podinfo pas encore déployé).
 
 ## Environnement
 
@@ -63,6 +63,28 @@ Les manifestes de `podinfo` (`apps/podinfo/base/`) sont rendus par Kustomize pui
 * **`readOnlyRootFilesystem: true`** : un attaquant qui prendrait la main sur le processus ne pourrait ni modifier le binaire ni déposer d'outil ; seul un volume `emptyDir` de 16 Mio monté sur `/data` est inscriptible. Ce fonctionnement a été testé en local avant d'être déclaré.
 
 La seconde commande valide les trois ressources en mode `-strict` : un champ inconnu, par exemple une faute de frappe dans `readOnlyRootFilesystem`, est rejeté au lieu d'être ignoré silencieusement par l'API server, ce qui aurait désactivé le durcissement sans aucun message d'erreur.
+
+### Argo CD v3.4.9 installé de façon déclarative et épinglée
+
+![Pods Argo CD Running sur les workers et CRDs enregistrées](screenshots/04-argocd-pods-running.png)
+
+Argo CD est installé par la seule opération impérative du projet :
+
+```
+kustomize build argocd/bootstrap | kubectl1.33 --context gitops-kubeadm apply --server-side -f -
+```
+
+`argocd/bootstrap/` référence le manifeste officiel non modifié, épinglé par le SHA du commit du tag `v3.4.9` (un tag Git peut être déplacé, un commit non), et y ajoute le namespace `argocd`. L'installation a d'abord été simulée avec `--dry-run=server`, qui fait passer chaque objet par l'authentification, le RBAC, la validation et l'admission de l'API server sans rien écrire dans etcd.
+
+`--server-side` n'est pas un choix de confort : en apply classique, `kubectl` recopie chaque objet dans l'annotation `last-applied-configuration`, limitée à 256 Kio, alors que les CRDs `applications` (397 Ko) et `applicationsets` (1,39 Mo) la dépassent. Avec Server-Side Apply, c'est l'API server qui calcule la fusion et suit la propriété de chaque champ (`managedFields`).
+
+La capture montre les sept composants `Running` sans redémarrage et les trois CRDs qui étendent l'API Kubernetes (`Application`, `ApplicationSet`, `AppProject`). Aucun pod ne tourne sur `k8s-master` : le taint `NoSchedule` du control-plane repousse toute la charge sur les workers, conformément à [l'architecture](docs/ARCHITECTURE.md). Le namespace `argocd` impose le profil Pod Security `restricted`, et les sept pods ont été admis : tous tournent sans root, sans capability et avec une racine en lecture seule. Les sept NetworkPolicies du manifeste officiel sont appliquées par Calico et cloisonnent les composants dès l'installation.
+
+![Images Argo CD v3.4.9 et consommation mémoire des pods](screenshots/05-argocd-version-ressources.png)
+
+La première commande liste l'image de chaque composant : `quay.io/argoproj/argocd:v3.4.9` partout, plus Dex et Redis aux versions fixées par ce manifeste. La version qui tourne est donc bien celle décidée, et non une `latest` récupérée au passage.
+
+La seconde mesure le coût réel d'Argo CD au repos, sans aucune Application : environ 150 Mio pour sept pods répartis sur deux workers. Dex, le connecteur SSO, en représente à lui seul environ 45 Mio alors qu'aucun SSO n'est configuré : c'est la première économie possible si la mémoire venait à manquer. La mesure se fait par pod (`top pods`) et non par nœud : le *working set* d'un nœud inclut une partie du cache disque du noyau, qui a justement baissé pendant le téléchargement des images, et ne reflète pas la consommation d'Argo CD.
 
 ## Licence
 
