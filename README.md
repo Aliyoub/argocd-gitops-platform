@@ -2,7 +2,7 @@
 
 Déploiement continu GitOps sur un cluster Kubernetes kubeadm avec Argo CD : le dépôt Git est l'unique source de vérité, et Argo CD aligne en continu le cluster sur son contenu (synchronisation automatique, self-heal, prune, rollback par `git revert`).
 
-> **Statut :** projet en cours de construction (Phase 4 terminée — Argo CD v3.4.9 installé ; podinfo pas encore déployé).
+> **Statut :** projet en cours de construction (Phase 5 terminée — Argo CD installé et sécurisé ; podinfo pas encore déployé).
 
 ## Environnement
 
@@ -85,6 +85,30 @@ La capture montre les sept composants `Running` sans redémarrage et les trois C
 La première commande liste l'image de chaque composant : `quay.io/argoproj/argocd:v3.4.9` partout, plus Dex et Redis aux versions fixées par ce manifeste. La version qui tourne est donc bien celle décidée, et non une `latest` récupérée au passage.
 
 La seconde mesure le coût réel d'Argo CD au repos, sans aucune Application : environ 150 Mio pour sept pods répartis sur deux workers. Dex, le connecteur SSO, en représente à lui seul environ 45 Mio alors qu'aucun SSO n'est configuré : c'est la première économie possible si la mémoire venait à manquer. La mesure se fait par pod (`top pods`) et non par nœud : le *working set* d'un nœud inclut une partie du cache disque du noyau, qui a justement baissé pendant le téléchargement des images, et ne reflète pas la consommation d'Argo CD.
+
+### Accès à Argo CD sans exposition et sécurisation du compte admin
+
+![Page de connexion Argo CD sur localhost, mot de passe masqué](screenshots/06-argocd-login.png)
+
+L'interface n'est exposée ni par NodePort, ni par Ingress, ni par LoadBalancer : le Service `argocd-server` reste en `ClusterIP`. On y accède par un tunnel ouvert à la demande depuis le poste d'administration :
+
+```
+kubectl1.33 --context gitops-kubeadm -n argocd port-forward svc/argocd-server 8080:443
+```
+
+Le tunnel n'écoute que sur `127.0.0.1` et n'existe que le temps de la commande ; l'ouvrir exige un kubeconfig valide, donc une authentification auprès de l'API Kubernetes. La barre d'adresse signale « Non sécurisé » : la connexion est chiffrée en TLS, mais le certificat est auto-signé, généré par Argo CD à l'installation, et aucune autorité reconnue n'en garantit l'identité. C'est un compromis de laboratoire assumé : en production, le certificat serait émis par cert-manager et une autorité reconnue.
+
+Le mot de passe initial, généré aléatoirement dans le Secret `argocd-initial-admin-secret`, n'a jamais été affiché : il a été extrait, décodé et envoyé directement dans le presse-papiers (`kubectl get secret ... | base64 -d | pbcopy`), puis collé dans le champ masqué. Base64 n'est qu'un encodage : quiconque peut lire les Secrets du namespace pourrait le lire, d'où les étapes suivantes.
+
+![Tableau de bord Argo CD v3.4.9 sans aucune Application](screenshots/07-argocd-tableau-de-bord-vide.png)
+
+Une fois connecté, le tableau de bord confirme la version v3.4.9 et l'absence de toute Application. C'est le point de départ voulu : tant qu'aucune Application n'est déclarée, Argo CD ne lit aucun dépôt et ne modifie aucune ressource du cluster.
+
+![CLI argocd authentifiée, versions alignées et secret initial supprimé](screenshots/08-argocd-cli-secret-initial-supprime.png)
+
+La connexion en CLI (`argocd login localhost:8080 --username admin --insecure`) passe par le même tunnel ; le mot de passe est saisi à une invite sans écho, jamais en argument de commande, où il resterait visible par `ps` et dans l'historique du shell. Le mot de passe admin a ensuite été changé (`argocd account update-password`) : seul son hash bcrypt est conservé, dans `argocd-secret`. Le Secret initial, devenu inutile, a été supprimé comme le recommande la documentation officielle ; Argo CD ne le régénère pas.
+
+La capture vérifie trois points : le client et le serveur sont construits depuis le même commit (`f4554f40…`), celui épinglé dans `argocd/bootstrap/` ; la session CLI est authentifiée (`Logged In: true`) ; `argocd-initial-admin-secret` ne figure plus parmi les Secrets. Elle montre aussi que le serveur embarque Kustomize v5.8.1, la version utilisée pour valider les manifestes en local : le rendu vérifié avant commit est celui qu'Argo CD appliquera.
 
 ## Licence
 
