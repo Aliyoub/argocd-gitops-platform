@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: podinfo
+
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+
+labels:
+  # Labels d'identité : aussi utilisés comme sélecteurs (Deployment, Service).
+  # Un sélecteur de Deployment est immuable : ces valeurs ne doivent pas changer.
+  - pairs:
+      app.kubernetes.io/name: podinfo
+      app.kubernetes.io/instance: podinfo
+    includeSelectors: true
+  # Labels descriptifs : sur les objets et les pods, jamais dans les sélecteurs.
+  - pairs:
+      app.kubernetes.io/part-of: argocd-gitops-platform
+      app.kubernetes.io/version: "6.15.0"
+    includeSelectors: false
+    includeTemplates: true

@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: podinfo
+spec:
+  # Deux replicas, un par worker : l'application reste disponible pendant
+  # un rolling update ou l'arrêt d'un worker.
+  replicas: 2
+  # Le rollback passe par Git (git revert), pas par l'historique des ReplicaSets.
+  revisionHistoryLimit: 3
+  minReadySeconds: 3
+  progressDeadlineSeconds: 120
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Un pod neuf doit être prêt avant qu'un pod de la version précédente soit arrêté.
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    spec:
+      # podinfo n'appelle pas l'API Kubernetes : aucun token monté.
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        # L'image déclare « USER app » (nom, non numérique) : le kubelet ne peut
+        # pas vérifier runAsNonRoot sans UID explicite. UID/GID relevés dans
+        # l'image : app = 100, groupe app = 101.
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          # Préférence et non obligation : si un worker tombe, les deux pods
+          # peuvent se regrouper sur l'autre au lieu de rester Pending.
+          whenUnsatisfiable: ScheduleAnyway
+          # Le control-plane (taint NoSchedule) n'est pas compté comme domaine.
+          nodeTaintsPolicy: Honor
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: podinfo
+              app.kubernetes.io/instance: podinfo
+      containers:
+        - name: podinfo
+          # Tag lisible + digest de l'index multi-architecture : le digest fait
+          # foi, un tag republié côté registre ne change pas ce qui est déployé.
+          image: ghcr.io/stefanprodan/podinfo:6.15.0@sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da
+          imagePullPolicy: IfNotPresent
+          command:
+            - ./podinfo
+            - --port=9898
+            - --level=info
+          ports:
+            - name: http
+              containerPort: 9898
+              protocol: TCP
+          env:
+            - name: PODINFO_UI_MESSAGE
+              value: "Déployé par Argo CD depuis Git"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          # Mesuré en local : ~13 Mio au repos, ~18 Mio après 500 requêtes.
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            # Seul répertoire inscriptible (racine en lecture seule).
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: 16Mi

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: podinfo
+  labels:
+    # Pod Security Admission : le niveau « restricted » est imposé, pas seulement
+    # audité. Un pod qui tournerait en root ou garderait des capabilities serait
+    # refusé à la création. Version épinglée sur celle du cluster pour qu'une
+    # mise à jour de Kubernetes ne durcisse pas la politique sans revue.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.32
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: v1.32
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: v1.32

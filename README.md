@@ -2,7 +2,7 @@
 
 Déploiement continu GitOps sur un cluster Kubernetes kubeadm avec Argo CD : le dépôt Git est l'unique source de vérité, et Argo CD aligne en continu le cluster sur son contenu (synchronisation automatique, self-heal, prune, rollback par `git revert`).
 
-> **Statut :** projet en cours de construction (Phase 2 terminée — environnement documenté).
+> **Statut :** projet en cours de construction (Phase 3 terminée — manifestes de podinfo validés, pas encore déployés).
 
 ## Environnement
 
@@ -50,6 +50,19 @@ Cette capture relève les contraintes sur lesquelles reposent trois choix du pro
 * **Exposition.** La dernière commande ne renvoie aucune IngressClass, seulement la StorageClass `local-path` : il n'existe aucun point d'entrée HTTP dans le cluster, et aucun LoadBalancer n'est disponible hors cloud. L'interface d'Argo CD sera donc consultée par `kubectl port-forward`, sans rien exposer au-delà du poste d'administration.
 
 Le détail et les autres contraintes relevées (dont la latence d'etcd) figurent dans [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+### Manifestes de podinfo validés avant tout déploiement
+
+![Rendu Kustomize et validation kubeconform des manifestes de podinfo](screenshots/03-podinfo-manifestes-valides.png)
+
+Les manifestes de `podinfo` (`apps/podinfo/base/`) sont rendus par Kustomize puis validés contre le schéma exact de Kubernetes 1.32, sans aucun accès au cluster : rien n'est appliqué à la main, c'est Argo CD qui déploiera ce rendu. La première commande extrait du rendu les propriétés qui portent la sécurité de l'application :
+
+* **`enforce: restricted`** sur le namespace : Pod Security Admission refuse tout pod qui tournerait en root, garderait des capabilities ou autoriserait l'escalade de privilèges. C'est une seconde barrière, indépendante des manifestes : même une erreur commitée dans Git ne pourrait pas lancer un pod privilégié dans ce namespace.
+* **Image épinglée par digest** : le tag `6.15.0` reste lisible, mais c'est le digest `sha256:…` de l'index multi-architecture qui fait foi. Un tag republié côté registre ne peut pas changer silencieusement ce qui tourne dans le cluster, et le déploiement est reproductible.
+* **`runAsUser: 100`** : l'image déclare un utilisateur par son nom (`USER app`), que le kubelet ne peut pas vérifier ; sans UID numérique, `runAsNonRoot` ferait refuser le pod. L'UID 100 a été relevé dans l'image elle-même.
+* **`readOnlyRootFilesystem: true`** : un attaquant qui prendrait la main sur le processus ne pourrait ni modifier le binaire ni déposer d'outil ; seul un volume `emptyDir` de 16 Mio monté sur `/data` est inscriptible. Ce fonctionnement a été testé en local avant d'être déclaré.
+
+La seconde commande valide les trois ressources en mode `-strict` : un champ inconnu, par exemple une faute de frappe dans `readOnlyRootFilesystem`, est rejeté au lieu d'être ignoré silencieusement par l'API server, ce qui aurait désactivé le durcissement sans aucun message d'erreur.
 
 ## Licence
 
