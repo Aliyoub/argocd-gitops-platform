@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: podinfo
+  namespace: argocd
+  finalizers:
+    # Supprimer l'Application supprime aussi les ressources qu'elle a créées
+    # (suppression en cascade), au lieu de les laisser orphelines.
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: podinfo
+  source:
+    repoURL: https://github.com/Aliyoub/argocd-gitops-platform.git
+    targetRevision: main
+    path: apps/podinfo/base
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: podinfo
+  syncPolicy:
+    automated:
+      # Supprime du cluster ce qui a été retiré de Git.
+      prune: true
+      # Annule toute modification faite hors Git (kubectl edit, scale...).
+      selfHeal: true
+      # Refuse une synchronisation qui supprimerait toutes les ressources
+      # (chemin vide ou erroné dans Git).
+      allowEmpty: false
+    syncOptions:
+      # Les suppressions interviennent après que le reste est appliqué et sain.
+      - PruneLast=true
+    # Nouvelles tentatives en cas d'échec transitoire (API server lent, etcd).
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

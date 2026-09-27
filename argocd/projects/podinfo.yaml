@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: podinfo
+  namespace: argocd
+  annotations:
+    # Créé avant l'Application qui y est rattachée, dans la même synchronisation.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: Application podinfo, limitée à son namespace et à ce dépôt
+  # Seule source autorisée : ce dépôt. Une Application du projet pointant vers
+  # un autre dépôt est refusée.
+  sourceRepos:
+    - https://github.com/Aliyoub/argocd-gitops-platform.git
+  # Seule destination autorisée : le namespace podinfo du cluster local.
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: podinfo
+  # Ressources cluster-scoped : uniquement le Namespace nommé podinfo. Argo CD
+  # ne confronte pas les objets cluster-scoped aux destinations : sans le champ
+  # name, le projet pourrait créer n'importe quel namespace.
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+      name: podinfo
+  # Ressources namespacées : uniquement ce que l'application déclare.
+  # Tout autre type (Secret, Role, ConfigMap...) est refusé à la synchronisation.
+  namespaceResourceWhitelist:
+    - group: apps
+      kind: Deployment
+    - group: ""
+      kind: Service
