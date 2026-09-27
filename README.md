@@ -2,7 +2,7 @@
 
 Déploiement continu GitOps sur un cluster Kubernetes kubeadm avec Argo CD : le dépôt Git est l'unique source de vérité, et Argo CD aligne en continu le cluster sur son contenu (synchronisation automatique, self-heal, prune, rollback par `git revert`).
 
-> **Statut :** projet en cours de construction (Phase 5 terminée — Argo CD installé et sécurisé ; podinfo pas encore déployé).
+> **Statut :** projet en cours de construction (Phase 6 terminée — podinfo déployé par Argo CD depuis Git, App of Apps).
 
 ## Environnement
 
@@ -109,6 +109,32 @@ Une fois connecté, le tableau de bord confirme la version v3.4.9 et l'absence d
 La connexion en CLI (`argocd login localhost:8080 --username admin --insecure`) passe par le même tunnel ; le mot de passe est saisi à une invite sans écho, jamais en argument de commande, où il resterait visible par `ps` et dans l'historique du shell. Le mot de passe admin a ensuite été changé (`argocd account update-password`) : seul son hash bcrypt est conservé, dans `argocd-secret`. Le Secret initial, devenu inutile, a été supprimé comme le recommande la documentation officielle ; Argo CD ne le régénère pas.
 
 La capture vérifie trois points : le client et le serveur sont construits depuis le même commit (`f4554f40…`), celui épinglé dans `argocd/bootstrap/` ; la session CLI est authentifiée (`Logged In: true`) ; `argocd-initial-admin-secret` ne figure plus parmi les Secrets. Elle montre aussi que le serveur embarque Kustomize v5.8.1, la version utilisée pour valider les manifestes en local : le rendu vérifié avant commit est celui qu'Argo CD appliquera.
+
+### podinfo déployé par Argo CD depuis Git (App of Apps)
+
+Un seul fichier est appliqué à la main, une seule fois : `argocd/root-app.yaml`. Il crée l'AppProject `platform` et l'Application racine `root`, qui surveille le dossier `argocd/` du dépôt sur GitHub. `root` y trouve l'AppProject et l'Application `podinfo`, qui surveille à son tour `apps/podinfo/base`. Tout le reste découle de Git :
+
+```
+kubectl apply -f argocd/root-app.yaml  (une fois)
+  └─ Application root (projet platform) ── lit argocd/
+       ├─ AppProject podinfo
+       └─ Application podinfo (projet podinfo) ── lit apps/podinfo/base
+            └─ Namespace, Service, Deployment → ReplicaSet → 2 pods
+```
+
+![Définition de l'AppProject podinfo](screenshots/09-argocd-appproject-podinfo.png)
+
+L'AppProject `podinfo` borne ce que l'application peut faire, indépendamment de ce que contiennent ses manifestes : une seule source (ce dépôt), une seule destination (le namespace `podinfo` du cluster local), et une liste fermée de types. Pour les ressources cluster-scoped, seul le Namespace **nommé** `podinfo` est autorisé : Argo CD ne confronte pas les objets cluster-scoped aux destinations, et sans le champ `name` le projet pourrait créer n'importe quel namespace, `kube-system` compris. Un Secret, un Role ou un ClusterRole ajouté dans `apps/podinfo/` serait refusé à la synchronisation. L'Application racine a son propre projet, `platform`, qui ne peut créer que des AppProjects et des Applications dans `argocd` ; le projet `default`, permissif, n'est utilisé par aucune Application.
+
+![Applications root et podinfo Synced et Healthy](screenshots/10-argocd-applications-synced-healthy.png)
+
+Les deux Applications sont `Synced` (le cluster correspond au dernier commit de `main`) et `Healthy` (les ressources fonctionnent : pour un Deployment, les replicas sont disponibles et leurs sondes répondent). Elles se synchronisent automatiquement avec `prune` (ce qui est retiré de Git est supprimé du cluster) et `selfHeal` (toute modification faite hors Git est annulée). `podinfo` porte le finalizer de suppression en cascade ; `root` ne le porte pas, pour qu'une suppression accidentelle du point d'entrée ne détruise pas les applications.
+
+![Arbre des ressources de l'Application podinfo](screenshots/11-argocd-arbre-ressources-podinfo.png)
+
+L'arbre montre ce qu'Argo CD applique (Namespace, Service, Deployment) et ce que Kubernetes en dérive (ReplicaSet, pods), relié par les `ownerReferences`. Les deux pods tournent sur des workers différents, sous Pod Security Admission `restricted`, admis dès la première tentative.
+
+Cet arbre a d'abord été incomplet : il s'arrêtait au Deployment. Le code d'Argo CD (`controller/appcontroller.go`) écarte de l'arbre tout enfant dont le type n'est pas autorisé par l'AppProject, et la liste blanche ne contenait que `Deployment` et `Service`. La correction, l'ajout de `ReplicaSet` et `Pod`, a été le premier changement réellement GitOps du projet : un commit poussé, aucune commande `kubectl`, et `root` a mis à jour l'AppProject 92 secondes plus tard, au polling suivant. Le compromis est assumé : la même liste autorise aussi à déployer ces types depuis Git, dans le même namespace et toujours sous PSA `restricted`. En haut de la capture, `Synced to main (f250cac)` alors que la dernière opération date de `da58c89` : ce commit ne modifiait pas `apps/podinfo/base`, l'état était donc déjà conforme et aucune nouvelle synchronisation n'a été nécessaire.
 
 ## Licence
 
