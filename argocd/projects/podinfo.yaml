@@ -23,10 +23,20 @@ spec:
     - group: ""
       kind: Namespace
       name: podinfo
-  # Ressources namespacées : uniquement ce que l'application déclare.
-  # Tout autre type (Secret, Role, ConfigMap...) est refusé à la synchronisation.
+  # Ressources namespacées : ce que l'application déclare, plus les objets que
+  # Kubernetes en dérive. Tout autre type (Secret, Role, ConfigMap...) est
+  # refusé à la synchronisation.
   namespaceResourceWhitelist:
     - group: apps
       kind: Deployment
+    # ReplicaSet et Pod ne sont pas déclarés dans Git, mais Argo CD masque de
+    # l'arbre des ressources tout enfant non autorisé par le projet : sans eux,
+    # ni pods, ni journaux, ni événements dans l'interface. Compromis : la même
+    # liste autorise aussi à les déployer depuis Git (même namespace, PSA
+    # restricted toujours appliqué).
+    - group: apps
+      kind: ReplicaSet
+    - group: ""
+      kind: Pod
     - group: ""
       kind: Service
