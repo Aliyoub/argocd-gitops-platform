@@ -59,7 +59,7 @@ spec:
               protocol: TCP
           env:
             - name: PODINFO_UI_MESSAGE
-              value: "Déployé par Argo CD depuis Git"
+              value: "Version 2 : déployée par un commit Git"
           readinessProbe:
             httpGet:
               path: /readyz
