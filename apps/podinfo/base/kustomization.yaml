@@ -6,7 +6,6 @@ namespace: podinfo
 resources:
   - namespace.yaml
   - deployment.yaml
-  - service.yaml
 
 labels:
   # Labels d'identité : aussi utilisés comme sélecteurs (Deployment, Service).
