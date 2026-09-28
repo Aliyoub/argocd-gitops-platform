@@ -2,7 +2,7 @@
 
 Déploiement continu GitOps sur un cluster Kubernetes kubeadm avec Argo CD : le dépôt Git est l'unique source de vérité, et Argo CD aligne en continu le cluster sur son contenu (synchronisation automatique, self-heal, prune, rollback par `git revert`).
 
-> **Statut :** projet en cours de construction (Phase 6 terminée — podinfo déployé par Argo CD depuis Git, App of Apps).
+> **Statut :** projet en cours de construction (Phase 7 terminée — scénarios GitOps rejoués et documentés).
 
 ## Environnement
 
@@ -135,6 +135,22 @@ Les deux Applications sont `Synced` (le cluster correspond au dernier commit de 
 L'arbre montre ce qu'Argo CD applique (Namespace, Service, Deployment) et ce que Kubernetes en dérive (ReplicaSet, pods), relié par les `ownerReferences`. Les deux pods tournent sur des workers différents, sous Pod Security Admission `restricted`, admis dès la première tentative.
 
 Cet arbre a d'abord été incomplet : il s'arrêtait au Deployment. Le code d'Argo CD (`controller/appcontroller.go`) écarte de l'arbre tout enfant dont le type n'est pas autorisé par l'AppProject, et la liste blanche ne contenait que `Deployment` et `Service`. La correction, l'ajout de `ReplicaSet` et `Pod`, a été le premier changement réellement GitOps du projet : un commit poussé, aucune commande `kubectl`, et `root` a mis à jour l'AppProject 92 secondes plus tard, au polling suivant. Le compromis est assumé : la même liste autorise aussi à déployer ces types depuis Git, dans le même namespace et toujours sous PSA `restricted`. En haut de la capture, `Synced to main (f250cac)` alors que la dernière opération date de `da58c89` : ce commit ne modifiait pas `apps/podinfo/base`, l'état était donc déjà conforme et aucune nouvelle synchronisation n'a été nécessaire.
+
+### Scénarios GitOps : déploiement, self-heal, prune, rollback, historique
+
+Cinq scénarios enchaînés sur `podinfo` rejouent ce qui fait l'intérêt de GitOps. Ils sont détaillés dans [docs/GITOPS-SCENARIOS.md](docs/GITOPS-SCENARIOS.md), avec pour chacun l'objectif, l'état initial, l'action, le comportement attendu, le comportement réellement observé (horodatages compris) et l'explication.
+
+| # | Scénario | Déclencheur | Résultat observé |
+| - | -------- | ----------- | ---------------- |
+| 1 | Déploiement continu | commit Git | nouvelle version déployée sans `kubectl`, deux pods prêts à chaque instant |
+| 2 | Self-heal | `kubectl scale` manuel, hors Git | modification annulée en 2 à 3 s |
+| 3 | Prune | manifeste retiré de Git | Service supprimé du cluster, Deployment intact |
+| 4 | Rollback | `git revert` | Service rétabli 34 s après le push, historique conservé |
+| 5 | Historique | lecture | chaque déploiement relié à son commit, lancé par la politique automatique |
+
+![Historique Argo CD face à l'historique Git](screenshots/22-s5-historique-cli.png)
+
+Les quatre déploiements enregistrés par Argo CD correspondent exactement aux commits qui ont modifié l'application ; les corrections du self-heal, qui réappliquent une révision déjà déployée, n'en créent pas. Cet historique est un journal des déploiements, pas la source de vérité : la référence reste `git log`, complet et relu en pull request.
 
 ## Licence
 
