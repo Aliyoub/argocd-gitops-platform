@@ -1,0 +1,13 @@
+extends: default
+
+rules:
+  line-length:
+    max: 140
+  # Les manifestes Kubernetes n'utilisent pas de marqueur « --- » initial.
+  document-start: disable
+  # Évite de signaler la clé « on: » des workflows GitHub Actions.
+  truthy:
+    check-keys: false
+
+ignore: |
+  .git/

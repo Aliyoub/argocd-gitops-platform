@@ -1,0 +1,58 @@
+name: Validation des manifestes
+
+# La CI valide, elle ne déploie rien : elle n'a aucune credential du cluster.
+# C'est Argo CD, dans le cluster, qui lit Git et applique (modèle pull).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Lecture seule du dépôt : le jeton GITHUB_TOKEN ne peut rien modifier.
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: yamllint, kustomize, kubeconform, règles de sécurité
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      KUSTOMIZE_VERSION: v5.8.1
+      KUSTOMIZE_SHA256: 029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d
+      KUBECONFORM_VERSION: v0.8.0
+      KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
+    steps:
+      # Action épinglée par SHA de commit : un tag peut être déplacé, pas un commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Installer kustomize et kubeconform (versions épinglées, SHA-256 vérifiés)
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/bin"
+          mkdir -p "$bin"
+          curl -fsSLo kustomize.tar.gz \
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+          echo "${KUSTOMIZE_SHA256}  kustomize.tar.gz" | sha256sum -c -
+          curl -fsSLo kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          echo "${KUBECONFORM_SHA256}  kubeconform.tar.gz" | sha256sum -c -
+          tar -xzf kustomize.tar.gz -C "$bin" kustomize
+          tar -xzf kubeconform.tar.gz -C "$bin" kubeconform
+          rm kustomize.tar.gz kubeconform.tar.gz
+          echo "$bin" >> "$GITHUB_PATH"
+
+      - name: Installer yamllint et PyYAML (versions et empreintes épinglées)
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --require-hashes --no-deps -r scripts/requirements-ci.txt
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+
+      - name: Valider les manifestes
+        run: scripts/validate.sh
