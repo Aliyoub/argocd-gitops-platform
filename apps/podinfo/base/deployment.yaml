@@ -47,7 +47,7 @@ spec:
         - name: podinfo
           # Tag lisible + digest de l'index multi-architecture : le digest fait
           # foi, un tag republié côté registre ne change pas ce qui est déployé.
-          image: ghcr.io/stefanprodan/podinfo:6.15.0@sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da
+          image: ghcr.io/stefanprodan/podinfo:latest
           imagePullPolicy: IfNotPresent
           command:
             - ./podinfo
