@@ -63,8 +63,10 @@ def main():
             checked += 1
     if checked == 0:
         sys.exit("aucun conteneur trouvé sur l'entrée standard")
+    # flush : sans terminal (CI), stdout est mis en tampon alors que le bilan
+    # part sur stderr sans tampon ; il s'afficherait avant les détails.
     for error in errors:
-        print(f"  ÉCHEC {error}")
+        print(f"  ÉCHEC {error}", flush=True)
     if errors:
         sys.exit(f"{len(errors)} règle(s) non respectée(s) sur {checked} conteneur(s)")
     print(f"{checked} conteneur(s) conforme(s)")

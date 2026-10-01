@@ -2,7 +2,7 @@
 
 Déploiement continu GitOps sur un cluster Kubernetes kubeadm avec Argo CD : le dépôt Git est l'unique source de vérité, et Argo CD aligne en continu le cluster sur son contenu (synchronisation automatique, self-heal, prune, rollback par `git revert`).
 
-> **Statut :** projet en cours de construction (Phase 7 terminée — scénarios GitOps rejoués et documentés).
+> **Statut :** projet en cours de construction (Phase 8 terminée — manifestes validés en CI et en local).
 
 ## Environnement
 
@@ -22,11 +22,12 @@ La structure sera complétée au fil des phases :
 
 ```
 argocd-gitops-platform/
-├── apps/          # manifestes des applications (Kustomize)
-├── argocd/        # installation d'Argo CD, AppProjects, Applications
-├── docs/          # architecture, sécurité, décisions, scénarios GitOps, troubleshooting
-├── screenshots/   # preuves commentées
-└── scripts/       # validation et réinitialisation du laboratoire
+├── .github/workflows/ # CI : validation des manifestes, sans accès au cluster
+├── apps/              # manifestes des applications (Kustomize)
+├── argocd/            # installation d'Argo CD, AppProjects, Applications
+├── docs/              # architecture, sécurité, décisions, scénarios GitOps, troubleshooting
+├── screenshots/       # preuves commentées
+└── scripts/           # validation (et, plus tard, réinitialisation du laboratoire)
 ```
 
 ## Preuves
@@ -151,6 +152,30 @@ Cinq scénarios enchaînés sur `podinfo` rejouent ce qui fait l'intérêt de Gi
 ![Historique Argo CD face à l'historique Git](screenshots/22-s5-historique-cli.png)
 
 Les quatre déploiements enregistrés par Argo CD correspondent exactement aux commits qui ont modifié l'application ; les corrections du self-heal, qui réappliquent une révision déjà déployée, n'en créent pas. Cet historique est un journal des déploiements, pas la source de vérité : la référence reste `git log`, complet et relu en pull request.
+
+### Validation continue des manifestes : la CI valide, Argo CD déploie
+
+Chaque push sur `main` et chaque pull request déclenchent le workflow [`validate-manifests.yml`](.github/workflows/validate-manifests.yml), qui exécute [`scripts/validate.sh`](scripts/validate.sh). Le même script tourne sur le poste du développeur : une erreur est attrapée en quelques secondes, avant même de pousser.
+
+![Validation locale réussie](screenshots/23-ci-validation-locale.png)
+
+| Contrôle | Ce qu'il attrape |
+| -------- | ---------------- |
+| `yamllint --strict` sur tout le dépôt | syntaxe, indentation, clés dupliquées |
+| intégrité du manifeste Argo CD | une modification du fichier distant épinglé : son SHA-256 est comparé à celui noté dans `argocd/bootstrap/kustomization.yaml` |
+| rendu Kustomize des trois dossiers | un `kustomization.yaml` cassé, une ressource manquante |
+| `kubeconform -strict` (Kubernetes 1.32) | un champ inconnu ou mal typé, y compris dans les Applications et AppProjects, grâce à des schémas générés depuis les CRDs du manifeste épinglé |
+| règles de sécurité des applications | image `latest` ou sans digest, `requests`/`limits` manquantes, exécution en root, escalade de privilèges, racine inscriptible, capabilities conservées |
+
+![Run GitHub Actions réussi](screenshots/24-ci-github-actions-reussi.png)
+
+Le workflow ne détient aucun secret ni kubeconfig, et son jeton est en lecture seule (`permissions: contents: read`) : c'est le modèle pull, où la CI valide et où Argo CD, dans le cluster, applique. Compromettre la CI ne donne pas accès au cluster. La chaîne d'approvisionnement est verrouillée : `actions/checkout` est épinglé par SHA de commit, kustomize et kubeconform sont téléchargés en version fixe et vérifiés par SHA-256, yamllint et PyYAML sont installés avec `pip --require-hashes`.
+
+![Pull request refusée par la CI](screenshots/25-ci-echec-volontaire.png)
+
+Une pull request volontairement fautive, l'image de `podinfo` passée en `latest`, a été refusée : le manifeste reste valide pour kubeconform (`Invalid: 0`), car un tag `latest` respecte le schéma Kubernetes, mais les règles de sécurité le rejettent avec la correction attendue. La validation de schéma vérifie qu'un manifeste est bien formé ; les règles vérifient qu'il est acceptable. La pull request a été fermée sans fusion ; Argo CD, qui ne suit que `main`, ne l'a jamais vue.
+
+Limite assumée à ce stade : la CI informe mais ne bloque pas. Un commit poussé directement sur `main` serait déployé même avec une CI en échec ; elle ne devient une barrière qu'avec une protection de branche exigeant une pull request et le succès de ce contrôle.
 
 ## Licence
 
